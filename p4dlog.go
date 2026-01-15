@@ -1422,6 +1422,7 @@ const trackChange = "--- change"
 const trackClientEntity = "--- clientEntity"
 const trackReplicaPull = "--- replica/pull"
 const trackStorage = "--- storageup/"
+const trackLogin = "--- login/"
 const trackLbrRcs = "--- lbr Rcs"
 const trackLbrBinary = "--- lbr Binary"
 const trackLbrCompress = "--- lbr Compress"
@@ -1562,7 +1563,7 @@ func (fp *P4dFileParser) processTrackRecords(cmd *Command, lines []string) {
 			tableName = fmt.Sprintf("%s%s", tableName, ext)
 			t := newTable(tableName)
 			cmd.Tables[tableName] = t
-			// Normally if we find track info we note it but this is a sppecial case since storageup
+			// Normally if we find track info we note it but this is a special case since storageup
 			// often output before end of command. If we note track info then we may not process end
 			// record properly with the rest of the track info.
 			hasTableTrackInfo = true
@@ -1572,6 +1573,7 @@ func (fp *P4dFileParser) processTrackRecords(cmd *Command, lines []string) {
 			strings.HasPrefix(line, trackChange) ||
 			strings.HasPrefix(line, trackClients) ||
 			strings.HasPrefix(line, trackClientEntity) ||
+			strings.HasPrefix(line, trackLogin) ||
 			strings.HasPrefix(line, trackReplicaPull) {
 			// Special tables don't have trackInfo set
 			cmd.hasIgnoredTables = true

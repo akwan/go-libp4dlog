@@ -1701,3 +1701,30 @@ Perforce server info:
 	assert.JSONEq(t, cleanJSON(`{"app":"Unity/v86", "args":"F:/fred_ws/ProjectSettings/EditorSettings.asset", "cmd":"user-fstat", "cmdError":true, "completedLapse":0.009, "endTime":"2025/03/25 17:07:37", "ip":"10.12.18.46", "lineNo":2, "maxRss":20028, "pid":3943377, "processKey":"44e256ce3dff7f2e2a71f2f8770282fd", "running":1, "sCpu":1, "startTime":"2025/03/25 17:07:37", "tables":[], "uCpu":2, "user":"fred", "workspace":"fred_ws"}`),
 		cleanJSON(output[0]))
 }
+
+func TestLoginLocks(t *testing.T) {
+	// Testing with extra login info that was causing commands to be doubled counted and leave as pending.
+	testInput := `
+Perforce server info:
+	2026/01/12 15:51:06 pid 11316 autobuild@test_ws 10.36.48.223 [Crio [PY3.13.0/P4PY2025.1/API2025.1/2761706]/v98] 'user-login'
+Perforce server info:
+	2026/01/12 15:51:06 pid 11316 autobuild@test_ws 10.36.48.223 [Crio [PY3.13.0/P4PY2025.1/API2025.1/2761706]/v98] 'user-login'
+--- login/10%2E36%2E48%2E223(W)
+---   total lock wait+held read/write 0ms+0ms/0ms+0ms
+
+Perforce server info:
+	2026/01/12 15:51:06 pid 11316 completed .000s
+Perforce server info:
+	2026/01/12 15:51:06 pid 11316 autobuild@test_ws 10.36.48.223 [Crio [PY3.13.0/P4PY2025.1/API2025.1/2761706]/v98] 'user-login'
+--- memory cmd/proc 73mb/73mb
+--- rpc msgs/size in+out 1+4/0mb+0mb himarks 130372/261444 snd/rcv .000s/.000s
+--- filetotals (svr) send/recv files+bytes 0+0mb/0+0mb
+--- db.ldap
+---   pages in+out+cached 3+0+2
+---   locks read/write 1/0 rows get+pos+scan put+del 0+4+10 0+0
+`
+	output := parseLogLines(testInput)
+	assert.Equal(t, 1, len(output))
+	assert.JSONEq(t, cleanJSON(`{"app":"Crio [PY3.13.0/P4PY2025.1/API2025.1/2761706]/v98", "args":"", "cmd":"user-login", "cmdError":false, "endTime":"2026/01/12 15:51:06", "ip":"10.36.48.223", "lineNo":2, "memMB":73, "memPeakMB":73, "pid":11316, "processKey":"dfb4ba772f49e4ea81850c370ec7cf0c", "rpcHimarkFwd":130372, "rpcHimarkRev":261444, "rpcMsgsIn":1, "rpcMsgsOut":4, "running":1, "startTime":"2026/01/12 15:51:06", "tables":[{"pagesCached":2, "pagesIn":3, "posRows":4, "readLocks":1, "scanRows":10, "tableName":"ldap"}], "user":"autobuild", "workspace":"test_ws"}`),
+		cleanJSON(output[0]))
+}
