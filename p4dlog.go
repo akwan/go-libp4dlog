@@ -2121,7 +2121,9 @@ func (fp *P4dFileParser) processInfoBlock(block *Block) {
 	}
 
 	ind := 0
-	for _, line := range block.lines {
+	multiLineActive := false
+	for ind < len(block.lines) {
+		line := block.lines[ind]
 		if cmd != nil && strings.HasPrefix(line, trackStart) {
 			fp.processTrackRecords(cmd, block.lines[ind:])
 			return // Block has been processed
@@ -2136,6 +2138,9 @@ func (fp *P4dFileParser) processInfoBlock(block *Block) {
 		if len(m) == 0 {
 			// Note multiline descriptions will not be appended to the cmd.Args value - just the first line
 			m = reCmdMultiLineDesc.FindStringSubmatch(line)
+			if len(m) > 0 {
+				multiLineActive = true
+			}
 		}
 		if len(m) > 0 {
 			matched = true
@@ -2158,14 +2163,38 @@ func (fp *P4dFileParser) processInfoBlock(block *Block) {
 					cmd.Args = string(sm[1])
 				}
 			}
-			// Detect trigger entries
+			h := md5.Sum([]byte(line))
+			cmd.ProcessKey = hex.EncodeToString(h[:])
 			trigger := ""
-			if i := strings.Index(line, "' trigger "); i >= 0 {
-				tm := reCmdTrigger.FindStringSubmatch(line[i:])
-				if len(tm) > 0 {
-					trigger = string(tm[1])
+			if multiLineActive { // Append any further lines until we reach what we hope is the end of multi line
+				for ind < len(block.lines) {
+					line = block.lines[ind]
+					ind++
+					if i := strings.Index(line, "' trigger "); i >= 0 {
+						multiLineActive = false
+						tm := reCmdTrigger.FindStringSubmatch(line[i:])
+						if len(tm) > 0 {
+							trigger = string(tm[1])
+						}
+						line = line[:i+1] // Strip from the line
+						break
+					}
+					if i := strings.Index(line, "'"); i == len(line)-1 {
+						multiLineActive = false
+						break
+					}
 				}
-				line = line[:i+1] // Strip from the line
+			} else {
+				// Detect trigger entries
+				if i := strings.Index(line, "' trigger "); i >= 0 {
+					tm := reCmdTrigger.FindStringSubmatch(line[i:])
+					if len(tm) > 0 {
+						trigger = string(tm[1])
+					}
+					line = line[:i+1] // Strip from the line
+					h = md5.Sum([]byte(line))
+					cmd.ProcessKey = hex.EncodeToString(h[:])
+				}
 			}
 			// Detect slightly strange IDLE, Init() commands
 			if i := strings.Index(line, "' exited unexpectedly, removed from monitor table."); i >= 0 {
@@ -2181,8 +2210,6 @@ func (fp *P4dFileParser) processInfoBlock(block *Block) {
 				}
 				return
 			}
-			h := md5.Sum([]byte(line))
-			cmd.ProcessKey = hex.EncodeToString(h[:])
 			// if fp.debugLog(cmd) {
 			// 	fp.logger.Debugf("Setting pid %d, processKey %s, '%s'", cmd.Pid, cmd.ProcessKey, line)
 			// }

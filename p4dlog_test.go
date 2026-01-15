@@ -1728,3 +1728,35 @@ Perforce server info:
 	assert.JSONEq(t, cleanJSON(`{"app":"Crio [PY3.13.0/P4PY2025.1/API2025.1/2761706]/v98", "args":"", "cmd":"user-login", "cmdError":false, "endTime":"2026/01/12 15:51:06", "ip":"10.36.48.223", "lineNo":2, "memMB":73, "memPeakMB":73, "pid":11316, "processKey":"dfb4ba772f49e4ea81850c370ec7cf0c", "rpcHimarkFwd":130372, "rpcHimarkRev":261444, "rpcMsgsIn":1, "rpcMsgsOut":4, "running":1, "startTime":"2026/01/12 15:51:06", "tables":[{"pagesCached":2, "pagesIn":3, "posRows":4, "readLocks":1, "scanRows":10, "tableName":"ldap"}], "user":"autobuild", "workspace":"test_ws"}`),
 		cleanJSON(output[0]))
 }
+
+func TestSubmitMultilineDescAndTriggers(t *testing.T) {
+	// Testing with extra login info that was causing commands to be doubled counted and leave as pending.
+	testInput := `
+Perforce server info:
+	2026/01/13 06:54:39 pid 1032 autobuild@test_ws 10.36.48.223 [Crio [PY3.13.0/P4PY2025.1/API2025.1/2761706]/v98] 'user-submit -d [AutoBuild] update XXX
+Branch: mainline
+UserId: null'
+
+Perforce server info:
+	2026/01/13 06:54:39 pid 1032 autobuild@test_ws 10.36.48.223 [Crio [PY3.13.0/P4PY2025.1/API2025.1/2761706]/v98] 'user-submit -d [AutoBuild] update XXX
+Branch: mainline
+UserId: null' trigger swarm.changesave
+lapse .141s
+Perforce server info:
+	2026/01/13 06:54:39 pid 1032 completed .156s
+Perforce server info:
+	2026/01/13 06:54:39 pid 1032 autobuild@test_ws 10.36.48.223 [Crio [PY3.13.0/P4PY2025.1/API2025.1/2761706]/v98] 'user-submit -d [AutoBuild] update XXX
+Branch: mainline
+UserId: null'
+--- lapse .156s
+--- memory cmd/proc 74mb/167mb
+--- db.counters
+---   pages in+out+cached 5+3+2
+---   locks read/write 3/1 rows get+pos+scan put+del 4+0+0 1+0
+
+`
+	output := parseLogLines(testInput)
+	assert.Equal(t, 1, len(output))
+	assert.JSONEq(t, cleanJSON(`{"app":"Crio [PY3.13.0/P4PY2025.1/API2025.1/2761706]/v98", "args":" -d [AutoBuild] update XXX", "cmd":"user-submit", "cmdError":false, "completedLapse":0.156, "endTime":"2026/01/13 06:54:39", "ip":"10.36.48.223", "lineNo":2, "memMB":74, "memPeakMB":167, "pid":1032, "processKey":"e60d3d022cb80d534512c03844790e31", "running":1, "startTime":"2026/01/13 06:54:39", "tables":[{"getRows":4, "pagesCached":2, "pagesIn":5, "pagesOut":3, "putRows":1, "readLocks":3, "tableName":"counters", "writeLocks":1}, {"tableName":"trigger_swarm.changesave", "triggerLapse":0.141}], "user":"autobuild", "workspace":"test_ws"}`),
+		cleanJSON(output[0]))
+}
