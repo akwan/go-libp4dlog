@@ -30,6 +30,17 @@ import (
 
 const statementsPerTransaction = 50 * 1000
 
+// DateFormat controls how datetime fields are formatted
+type DateFormat int
+
+const (
+	DateFormatDefault DateFormat = iota // "2006/01/02 15:04:05"
+	DateFormatISO8601                   // "2006-01-02 15:04:05"
+	DateFormatEpoch                     // Unix timestamp
+)
+
+var dateFormat DateFormat = DateFormatDefault
+
 // We use SQL comments which appear if you use ".schema" within Sqlite3 - helpful reminder
 func writeHeader(f io.Writer) {
 	fmt.Fprintf(f, `CREATE TABLE IF NOT EXISTS process -- main process table for commands
@@ -127,7 +138,14 @@ func dateStr(t time.Time) string {
 	if t == blankTime {
 		return ""
 	}
-	return t.Format("2006/01/02 15:04:05")
+	switch dateFormat {
+	case DateFormatISO8601:
+		return t.Format("2006-01-02 15:04:05")
+	case DateFormatEpoch:
+		return fmt.Sprintf("%d", t.Unix())
+	default:
+		return t.Format("2006/01/02 15:04:05")
+	}
 }
 
 func getProcessStatement() string {
@@ -550,6 +568,14 @@ func main() {
 			"debug.cmd",
 			"Set for debug output for specified command - requires debug.pid to be also specified.",
 		).Default("").String()
+		iso8601 = kingpin.Flag(
+			"iso8601",
+			"Store datetime as ISO 8601 standard (YYYY-MM-DD HH:MM:SS).",
+		).Bool()
+		epoch = kingpin.Flag(
+			"epoch",
+			"Store datetime as Unix timestamp (seconds since epoch).",
+		).Bool()
 	)
 	kingpin.UsageTemplate(kingpin.CompactUsageTemplate).Version(version.Print("log2sql")).Author("Robert Cowham")
 	kingpin.CommandLine.Help = "Parses one or more p4d text log files (which may be gzipped) into a Sqlite3 database and/or JSON or SQL format.\n" +
@@ -563,6 +589,17 @@ func main() {
 	if _, err := regexp.Compile(*outputCmdsByUserRegex); err != nil {
 		fmt.Printf("ERROR: Failed to parse parameter '%s' as a valid Go regex\n", *outputCmdsByUserRegex)
 		os.Exit(1)
+	}
+
+	// Validate and set date format
+	if *iso8601 && *epoch {
+		fmt.Println("ERROR: Cannot specify both --iso8601 and --epoch")
+		os.Exit(1)
+	}
+	if *iso8601 {
+		dateFormat = DateFormatISO8601
+	} else if *epoch {
+		dateFormat = DateFormatEpoch
 	}
 
 	if *debug > 0 {

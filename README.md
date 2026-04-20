@@ -78,6 +78,8 @@ Flags:
       --no.completion.records    Set if log was generated with server=1 and thus no completion records expected.
       --debug.pid=DEBUG.PID      Set for debug output for specified PID - requires debug.cmd to be also specified.
       --debug.cmd=""             Set for debug output for specified command - requires debug.pid to be also specified.
+      --iso8601                  Store datetime as ISO 8601 standard (YYYY-MM-DD HH:MM:SS).
+      --epoch                    Store datetime as Unix timestamp (seconds since epoch).
       --version                  Show application version.
 
 Args:
@@ -116,7 +118,7 @@ To write SQL statements to a file without creating a Sqlite db:
     log2sql --sql -n p4d.log
     log2sql --sql --sql.output sql.txt -n p4d.log
 
-Please note it is multi-threaded, and thus will use 2-3 cores if available (placign load on your system). You may wish to consider 
+Please note it is multi-threaded, and thus will use 2-3 cores if available (placing load on your system). You may wish to consider
 lowering its priority using the `nice` command.
 
 ## Some sample SQL queries
