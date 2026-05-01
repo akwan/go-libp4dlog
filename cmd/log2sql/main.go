@@ -148,6 +148,60 @@ func dateStr(t time.Time) string {
 	}
 }
 
+// CSV helper functions
+
+// truncateKey truncates the processkey to the specified length (0 = no truncation)
+func truncateKey(key string, length int) string {
+	if length > 0 && len(key) > length {
+		return key[:length]
+	}
+	return key
+}
+
+// csvEscape escapes a string for CSV output per RFC 4180
+func csvEscape(s string) string {
+	if strings.ContainsAny(s, ",\"\r\n") {
+		return `"` + strings.ReplaceAll(s, `"`, `""`) + `"`
+	}
+	return s
+}
+
+// csvInt formats an int64 for CSV, with optional null/zero suppression
+func csvInt(val int64, nullzero bool) string {
+	if nullzero && val == 0 {
+		return ""
+	}
+	return fmt.Sprintf("%d", val)
+}
+
+// csvFloat formats a float32 for CSV, with optional null/zero suppression
+func csvFloat(val float32, nullzero bool) string {
+	if nullzero && val == 0 {
+		return ""
+	}
+	return fmt.Sprintf("%.3f", val)
+}
+
+// csvBool formats a bool for CSV
+func csvBool(val bool) string {
+	if val {
+		return "true"
+	}
+	return ""
+}
+
+// getCSVPrefix returns the prefix for CSV output files
+func getCSVPrefix(prefix string, logfiles []string) string {
+	if prefix != "" {
+		return prefix
+	}
+	if len(logfiles) == 0 {
+		return "logs"
+	}
+	name := strings.TrimSuffix(logfiles[0], ".gz")
+	return strings.TrimSuffix(name, ".log")
+}
+
 func getProcessStatement() string {
 	return `INSERT INTO process
 		(processkey, lineNumber, pid,
@@ -315,6 +369,222 @@ func writeSQL(f io.Writer, cmd *p4dlog.Command) int64 {
 			t.TotalPeekWait, t.TotalPeekHeld, t.MaxPeekWait, t.MaxPeekHeld, t.TriggerLapse)
 	}
 	return int64(rows)
+}
+
+// CSV output functions
+
+// writeCSVProcessHeader writes the header row for process CSV
+func writeCSVProcessHeader(f io.Writer) {
+	fmt.Fprintln(f, "startTime,processKey,pid,endTime,computedLapse,completedLapse,"+
+		"user,workspace,ip,app,cmd,args,uCpu,sCpu,diskIn,diskOut,"+
+		"ipcIn,ipcOut,maxRss,pageFaults,rpcMsgsIn,rpcMsgsOut,rpcSizeIn,"+
+		"rpcSizeOut,rpcHimarkFwd,rpcHimarkRev,rpcSnd,rpcRcv,running,error,"+
+		"lineNumber,paused,memMB,memPeakMB,"+
+		"fileTotalsSnd,fileTotalsRcv,fileTotalsSndMB,fileTotalsRcvMB,"+
+		"netSyncFilesAdded,netSyncFilesUpdated,netSyncFilesDeleted,"+
+		"netSyncBytesAdded,netSyncBytesUpdated,"+
+		"lbrRcsOpens,lbrRcsCloses,lbrRcsCheckins,lbrRcsExists,"+
+		"lbrRcsReads,lbrRcsReadBytes,lbrRcsWrites,lbrRcsWriteBytes,"+
+		"lbrRcsDigests,lbrRcsFileSizes,lbrRcsModtimes,lbrRcsCopies,"+
+		"lbrBinaryOpens,lbrBinaryCloses,lbrBinaryCheckins,lbrBinaryExists,"+
+		"lbrBinaryReads,lbrBinaryReadBytes,lbrBinaryWrites,lbrBinaryWriteBytes,"+
+		"lbrBinaryDigests,lbrBinaryFileSizes,lbrBinaryModtimes,lbrBinaryCopies,"+
+		"lbrCompressOpens,lbrCompressCloses,lbrCompressCheckins,lbrCompressExists,"+
+		"lbrCompressReads,lbrCompressReadBytes,lbrCompressWrites,lbrCompressWriteBytes,"+
+		"lbrCompressDigests,lbrCompressFileSizes,lbrCompressModtimes,lbrCompressCopies,"+
+		"lbrUncompressOpens,lbrUncompressCloses,lbrUncompressCheckins,lbrUncompressExists,"+
+		"lbrUncompressReads,lbrUncompressReadBytes,lbrUncompressWrites,lbrUncompressWriteBytes,"+
+		"lbrUncompressDigests,lbrUncompressFileSizes,lbrUncompressModtimes,lbrUncompressCopies")
+}
+
+// writeCSVProcess writes a process record to CSV
+func writeCSVProcess(f io.Writer, cmd *p4dlog.Command, keyLen int, nullzero bool) {
+	key := truncateKey(cmd.GetKey(), keyLen)
+	fmt.Fprintf(f, "%s,%s,%d,%s,%s,%s,"+
+		"%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,"+
+		"%s,%s,%s,%s,%s,%s,%s,"+
+		"%s,%s,%s,%s,%s,%s,%s,"+
+		"%d,%s,%s,%s,"+
+		"%s,%s,%s,%s,"+
+		"%s,%s,%s,"+
+		"%s,%s,"+
+		"%s,%s,%s,%s,"+
+		"%s,%s,%s,%s,"+
+		"%s,%s,%s,%s,"+
+		"%s,%s,%s,%s,"+
+		"%s,%s,%s,%s,"+
+		"%s,%s,%s,%s,"+
+		"%s,%s,%s,%s,"+
+		"%s,%s,%s,%s,"+
+		"%s,%s,%s,%s,"+
+		"%s,%s,%s,%s,"+
+		"%s,%s,%s,%s,"+
+		"%s,%s,%s,%s\n",
+		dateStr(cmd.StartTime),
+		key,
+		cmd.Pid,
+		dateStr(cmd.EndTime),
+		csvFloat(cmd.ComputeLapse, nullzero),
+		csvFloat(cmd.CompletedLapse, nullzero),
+		csvEscape(cmd.User),
+		csvEscape(cmd.Workspace),
+		cmd.IP,
+		csvEscape(cmd.App),
+		cmd.Cmd,
+		csvEscape(cmd.Args),
+		csvInt(cmd.UCpu, nullzero),
+		csvInt(cmd.SCpu, nullzero),
+		csvInt(cmd.DiskIn, nullzero),
+		csvInt(cmd.DiskOut, nullzero),
+		csvInt(cmd.IpcIn, nullzero),
+		csvInt(cmd.IpcOut, nullzero),
+		csvInt(cmd.MaxRss, nullzero),
+		csvInt(cmd.PageFaults, nullzero),
+		csvInt(cmd.RPCMsgsIn, nullzero),
+		csvInt(cmd.RPCMsgsOut, nullzero),
+		csvInt(cmd.RPCSizeIn, nullzero),
+		csvInt(cmd.RPCSizeOut, nullzero),
+		csvInt(cmd.RPCHimarkFwd, nullzero),
+		csvInt(cmd.RPCHimarkRev, nullzero),
+		csvFloat(cmd.RPCSnd, nullzero),
+		csvFloat(cmd.RPCRcv, nullzero),
+		csvInt(cmd.Running, nullzero),
+		csvBool(cmd.CmdError),
+		cmd.LineNo,
+		csvFloat(cmd.Paused, nullzero),
+		csvInt(cmd.MemMB, nullzero),
+		csvInt(cmd.MemPeakMB, nullzero),
+		csvInt(cmd.FileTotalsSnd, nullzero),
+		csvInt(cmd.FileTotalsRcv, nullzero),
+		csvInt(cmd.FileTotalsSndMBytes, nullzero),
+		csvInt(cmd.FileTotalsRcvMBytes, nullzero),
+		csvInt(cmd.NetFilesAdded, nullzero),
+		csvInt(cmd.NetFilesUpdated, nullzero),
+		csvInt(cmd.NetFilesDeleted, nullzero),
+		csvInt(cmd.NetBytesAdded, nullzero),
+		csvInt(cmd.NetBytesUpdated, nullzero),
+		csvInt(cmd.LbrRcsOpens, nullzero),
+		csvInt(cmd.LbrRcsCloses, nullzero),
+		csvInt(cmd.LbrRcsCheckins, nullzero),
+		csvInt(cmd.LbrRcsExists, nullzero),
+		csvInt(cmd.LbrRcsReads, nullzero),
+		csvInt(cmd.LbrRcsReadBytes, nullzero),
+		csvInt(cmd.LbrRcsWrites, nullzero),
+		csvInt(cmd.LbrRcsWriteBytes, nullzero),
+		csvInt(cmd.LbrRcsDigests, nullzero),
+		csvInt(cmd.LbrRcsFileSizes, nullzero),
+		csvInt(cmd.LbrRcsModTimes, nullzero),
+		csvInt(cmd.LbrRcsCopies, nullzero),
+		csvInt(cmd.LbrBinaryOpens, nullzero),
+		csvInt(cmd.LbrBinaryCloses, nullzero),
+		csvInt(cmd.LbrBinaryCheckins, nullzero),
+		csvInt(cmd.LbrBinaryExists, nullzero),
+		csvInt(cmd.LbrBinaryReads, nullzero),
+		csvInt(cmd.LbrBinaryReadBytes, nullzero),
+		csvInt(cmd.LbrBinaryWrites, nullzero),
+		csvInt(cmd.LbrBinaryWriteBytes, nullzero),
+		csvInt(cmd.LbrBinaryDigests, nullzero),
+		csvInt(cmd.LbrBinaryFileSizes, nullzero),
+		csvInt(cmd.LbrBinaryModTimes, nullzero),
+		csvInt(cmd.LbrBinaryCopies, nullzero),
+		csvInt(cmd.LbrCompressOpens, nullzero),
+		csvInt(cmd.LbrCompressCloses, nullzero),
+		csvInt(cmd.LbrCompressCheckins, nullzero),
+		csvInt(cmd.LbrCompressExists, nullzero),
+		csvInt(cmd.LbrCompressReads, nullzero),
+		csvInt(cmd.LbrCompressReadBytes, nullzero),
+		csvInt(cmd.LbrCompressWrites, nullzero),
+		csvInt(cmd.LbrCompressWriteBytes, nullzero),
+		csvInt(cmd.LbrCompressDigests, nullzero),
+		csvInt(cmd.LbrCompressFileSizes, nullzero),
+		csvInt(cmd.LbrCompressModTimes, nullzero),
+		csvInt(cmd.LbrCompressCopies, nullzero),
+		csvInt(cmd.LbrUncompressOpens, nullzero),
+		csvInt(cmd.LbrUncompressCloses, nullzero),
+		csvInt(cmd.LbrUncompressCheckins, nullzero),
+		csvInt(cmd.LbrUncompressExists, nullzero),
+		csvInt(cmd.LbrUncompressReads, nullzero),
+		csvInt(cmd.LbrUncompressReadBytes, nullzero),
+		csvInt(cmd.LbrUncompressWrites, nullzero),
+		csvInt(cmd.LbrUncompressWriteBytes, nullzero),
+		csvInt(cmd.LbrUncompressDigests, nullzero),
+		csvInt(cmd.LbrUncompressFileSizes, nullzero),
+		csvInt(cmd.LbrUncompressModTimes, nullzero),
+		csvInt(cmd.LbrUncompressCopies, nullzero))
+}
+
+// writeCSVTableUseHeader writes the header row for tableuse CSV
+func writeCSVTableUseHeader(f io.Writer) {
+	fmt.Fprintln(f, "startTime,processKey,tableName,pagesIn,pagesOut,pagesCached,"+
+		"readLocks,writeLocks,getRows,posRows,scanRows,putRows,delRows,"+
+		"totalReadWait,totalReadHeld,totalWriteWait,totalWriteHeld,"+
+		"maxReadWait,maxReadHeld,maxWriteWait,maxWriteHeld,peekCount,"+
+		"totalPeekWait,totalPeekHeld,maxPeekWait,maxPeekHeld,triggerLapse,"+
+		"lineNumber,pagesSplitInternal,pagesSplitLeaf")
+}
+
+// writeCSVTableUse writes a tableuse record to CSV
+func writeCSVTableUse(f io.Writer, cmd *p4dlog.Command, t *p4dlog.Table, keyLen int, nullzero bool) {
+	key := truncateKey(cmd.GetKey(), keyLen)
+	fmt.Fprintf(f, "%s,%s,%s,%s,%s,%s,"+
+		"%s,%s,%s,%s,%s,%s,%s,"+
+		"%s,%s,%s,%s,"+
+		"%s,%s,%s,%s,%s,"+
+		"%s,%s,%s,%s,%s,"+
+		"%d,%s,%s\n",
+		dateStr(cmd.StartTime),
+		key,
+		csvEscape(t.TableName),
+		csvInt(t.PagesIn, nullzero),
+		csvInt(t.PagesOut, nullzero),
+		csvInt(t.PagesCached, nullzero),
+		csvInt(t.ReadLocks, nullzero),
+		csvInt(t.WriteLocks, nullzero),
+		csvInt(t.GetRows, nullzero),
+		csvInt(t.PosRows, nullzero),
+		csvInt(t.ScanRows, nullzero),
+		csvInt(t.PutRows, nullzero),
+		csvInt(t.DelRows, nullzero),
+		csvInt(t.TotalReadWait, nullzero),
+		csvInt(t.TotalReadHeld, nullzero),
+		csvInt(t.TotalWriteWait, nullzero),
+		csvInt(t.TotalWriteHeld, nullzero),
+		csvInt(t.MaxReadWait, nullzero),
+		csvInt(t.MaxReadHeld, nullzero),
+		csvInt(t.MaxWriteWait, nullzero),
+		csvInt(t.MaxWriteHeld, nullzero),
+		csvInt(t.PeekCount, nullzero),
+		csvInt(t.TotalPeekWait, nullzero),
+		csvInt(t.TotalPeekHeld, nullzero),
+		csvInt(t.MaxPeekWait, nullzero),
+		csvInt(t.MaxPeekHeld, nullzero),
+		csvFloat(t.TriggerLapse, nullzero),
+		cmd.LineNo,
+		csvInt(t.PagesSplitInternal, nullzero),
+		csvInt(t.PagesSplitLeaf, nullzero))
+}
+
+// writeCSVEventsHeader writes the header row for events CSV
+func writeCSVEventsHeader(f io.Writer) {
+	fmt.Fprintln(f, "lineNumber,eventTime,activeThreads,activeThreadsMax,"+
+		"pausedThreads,pausedThreadsMax,pausedErrorCount,"+
+		"pauseRateCPU,pauseRateMem,cpuPressureState,memPressureState")
+}
+
+// writeCSVEvents writes an events record to CSV
+func writeCSVEvents(f io.Writer, evt *p4dlog.ServerEvent, nullzero bool) {
+	fmt.Fprintf(f, "%d,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n",
+		evt.LineNo,
+		dateStr(evt.EventTime),
+		csvInt(int64(evt.ActiveThreads), nullzero),
+		csvInt(int64(evt.ActiveThreadsMax), nullzero),
+		csvInt(int64(evt.PausedThreads), nullzero),
+		csvInt(int64(evt.PausedThreadsMax), nullzero),
+		csvInt(int64(evt.PausedErrorCount), nullzero),
+		csvInt(int64(evt.PauseRateCPU), nullzero),
+		csvInt(int64(evt.PauseRateMem), nullzero),
+		csvInt(int64(evt.CPUPressureState), nullzero),
+		csvInt(int64(evt.MemPressureState), nullzero))
 }
 
 func byteCountDecimal(b int64) string {
@@ -569,13 +839,37 @@ func main() {
 			"Set for debug output for specified command - requires debug.pid to be also specified.",
 		).Default("").String()
 		iso8601 = kingpin.Flag(
-			"iso8601",
+			"date-iso",
 			"Store datetime as ISO 8601 standard (YYYY-MM-DD HH:MM:SS).",
 		).Bool()
 		epoch = kingpin.Flag(
-			"epoch",
+			"date-epoch",
 			"Store datetime as Unix timestamp (seconds since epoch).",
 		).Bool()
+		csvOutput = kingpin.Flag(
+			"csv",
+			"Output CSV files.",
+		).Bool()
+		csvPrefix = kingpin.Flag(
+			"csv.prefix",
+			"Prefix for CSV output files. Creates <prefix>-process.csv, <prefix>-tableuse.csv, <prefix>-events.csv. Defaults to <logfile-prefix>.",
+		).String()
+		csvNoHeaders = kingpin.Flag(
+			"csv.noheaders",
+			"Omit header row from CSV output.",
+		).Bool()
+		processKeyLength = kingpin.Flag(
+			"processkey.length",
+			"Truncate processkey to specified length (0 = no truncation).",
+		).Default("0").Int()
+		csvNullZero = kingpin.Flag(
+			"csv.nullzero",
+			"Output empty string instead of 0 for null/zero values in CSV output.",
+		).Bool()
+		logTimezone = kingpin.Flag(
+			"date-epoch.timezone",
+			"Timezone of log timestamps. Defaults to system local timezone. Use IANA names (e.g., America/New_York, UTC, Europe/London).",
+		).String()
 	)
 	kingpin.UsageTemplate(kingpin.CompactUsageTemplate).Version(version.Print("log2sql")).Author("Robert Cowham")
 	kingpin.CommandLine.Help = "Parses one or more p4d text log files (which may be gzipped) into a Sqlite3 database and/or JSON or SQL format.\n" +
@@ -593,7 +887,7 @@ func main() {
 
 	// Validate and set date format
 	if *iso8601 && *epoch {
-		fmt.Println("ERROR: Cannot specify both --iso8601 and --epoch")
+		fmt.Println("ERROR: Cannot specify both --date-iso and --date-epoch")
 		os.Exit(1)
 	}
 	if *iso8601 {
@@ -672,6 +966,47 @@ func main() {
 		logger.Infof("Creating metrics output: %s, config: %+v", metricsFilename, mconfig)
 	}
 
+	// CSV output files
+	var fCSVProcess, fCSVTableUse, fCSVEvents *bufio.Writer
+	var fdCSVProcess, fdCSVTableUse, fdCSVEvents *os.File
+	writeCSV := *csvOutput
+	if writeCSV {
+		prefix := getCSVPrefix(*csvPrefix, *logfiles)
+		processFilename := prefix + "-process.csv"
+		tableuseFilename := prefix + "-tableuse.csv"
+		eventsFilename := prefix + "-events.csv"
+
+		fdCSVProcess, fCSVProcess, err = openFile(processFilename)
+		if err != nil {
+			logger.Fatal(err)
+		}
+		defer fdCSVProcess.Close()
+		defer fCSVProcess.Flush()
+
+		fdCSVTableUse, fCSVTableUse, err = openFile(tableuseFilename)
+		if err != nil {
+			logger.Fatal(err)
+		}
+		defer fdCSVTableUse.Close()
+		defer fCSVTableUse.Flush()
+
+		fdCSVEvents, fCSVEvents, err = openFile(eventsFilename)
+		if err != nil {
+			logger.Fatal(err)
+		}
+		defer fdCSVEvents.Close()
+		defer fCSVEvents.Flush()
+
+		// Write headers unless disabled
+		if !*csvNoHeaders {
+			writeCSVProcessHeader(fCSVProcess)
+			writeCSVTableUseHeader(fCSVTableUse)
+			writeCSVEventsHeader(fCSVEvents)
+		}
+
+		logger.Infof("Creating CSV output: %s, %s, %s", processFilename, tableuseFilename, eventsFilename)
+	}
+
 	writeDB := !*noSQL
 	var db *sqlite3.Conn
 	if writeDB {
@@ -690,7 +1025,7 @@ func main() {
 	var fp *p4dlog.P4dFileParser
 	var metricsChan chan string
 	var cmdChan chan interface{}
-	needCmdChan := writeDB || *sqlOutput || *jsonOutput
+	needCmdChan := writeDB || *sqlOutput || *jsonOutput || writeCSV
 
 	logger.Debugf("Metrics: %v, needCmdChan: %v", writeMetrics, needCmdChan)
 
@@ -711,6 +1046,11 @@ func main() {
 		}
 		if *noCompletionRecords {
 			mp.SetNoCompletionRecords()
+		}
+		if *logTimezone != "" {
+			if err := mp.SetTimezone(*logTimezone); err != nil {
+				logger.Fatal(err)
+			}
 		}
 		cmdChan, metricsChan = mp.ProcessEvents(ctx, linesChan, needCmdChan)
 
@@ -733,6 +1073,11 @@ func main() {
 		}
 		if *noCompletionRecords {
 			fp.SetNoCompletionRecords()
+		}
+		if *logTimezone != "" {
+			if err := fp.SetTimezone(*logTimezone); err != nil {
+				logger.Fatal(err)
+			}
 		}
 		cmdChan = fp.LogParser(ctx, linesChan)
 	}
@@ -811,6 +1156,12 @@ func main() {
 						i += j
 					}
 				}
+				if writeCSV {
+					writeCSVProcess(fCSVProcess, &cmd, *processKeyLength, *csvNullZero)
+					for _, t := range cmd.Tables {
+						writeCSVTableUse(fCSVTableUse, &cmd, t, *processKeyLength, *csvNullZero)
+					}
+				}
 				if i >= statementsPerTransaction && (*sqlOutput || writeDB) {
 					if *sqlOutput {
 						writeTransaction(fSQL)
@@ -848,6 +1199,9 @@ func main() {
 					if !*sqlOutput { // Avoid double counting
 						i += j
 					}
+				}
+				if writeCSV {
+					writeCSVEvents(fCSVEvents, &cmd, *csvNullZero)
 				}
 			}
 		}

@@ -346,12 +346,12 @@ func (c *Command) String() string {
 	return string(j)
 }
 
-func (c *Command) setStartTime(t string) {
-	c.StartTime, _ = time.Parse(p4timeformat, t)
+func (c *Command) setStartTime(t string, loc *time.Location) {
+	c.StartTime, _ = time.ParseInLocation(p4timeformat, t, loc)
 }
 
-func (c *Command) setEndTime(t string) {
-	c.EndTime, _ = time.Parse(p4timeformat, t)
+func (c *Command) setEndTime(t string, loc *time.Location) {
+	c.EndTime, _ = time.ParseInLocation(p4timeformat, t, loc)
 }
 
 func (c *Command) computeEndTime() time.Time {
@@ -1107,6 +1107,7 @@ func (c *Command) updateFrom(other *Command) {
 // P4dFileParser - manages state
 type P4dFileParser struct {
 	logger               *logrus.Logger
+	location             *time.Location // Timezone for parsing log timestamps
 	outputDuration       time.Duration
 	debugDuration        time.Duration
 	cmdsMaxResetDuration time.Duration // Window after which CmdsRunningMax/CmdsPausedMax are reset
@@ -1151,6 +1152,7 @@ func NewP4dFileParser(logger *logrus.Logger) *P4dFileParser {
 	fp.pidsSeenThisSecond = make(map[int64]bool)
 	fp.runningPids = make(map[int64]int64)
 	fp.logger = logger
+	fp.location = time.Local // Default to system local timezone
 	fp.outputDuration = time.Second * 1
 	fp.debugDuration = time.Second * 30
 	fp.cmdsMaxResetDuration = time.Second * 10
@@ -1160,6 +1162,27 @@ func NewP4dFileParser(logger *logrus.Logger) *P4dFileParser {
 // SetDebugMode - turn on debugging - very verbose!
 func (fp *P4dFileParser) SetDebugMode(level int) {
 	fp.debug = level
+}
+
+// SetTimezone sets the timezone for parsing log timestamps.
+// Use IANA timezone names (e.g., "America/New_York", "UTC", "Europe/London").
+// Defaults to system local timezone if not called or if empty string is passed.
+func (fp *P4dFileParser) SetTimezone(tz string) error {
+	if tz == "" {
+		fp.location = time.Local
+		return nil
+	}
+	loc, err := time.LoadLocation(tz)
+	if err != nil {
+		return fmt.Errorf("invalid timezone %q: %w", tz, err)
+	}
+	fp.location = loc
+	return nil
+}
+
+// GetLocation returns the current timezone location used for parsing
+func (fp *P4dFileParser) GetLocation() *time.Location {
+	return fp.location
 }
 
 // SetDebugPID - turn on debugging for a PID
@@ -1880,7 +1903,7 @@ func (fp *P4dFileParser) outputCmd(cmd *Command) {
 
 // Output a server event to appropriate channel
 func (fp *P4dFileParser) outputSvrEvent(timeStr string, lineNo int64) {
-	eventTime, _ := time.Parse(p4timeformat, timeStr)
+	eventTime, _ := time.ParseInLocation(p4timeformat, timeStr, fp.location)
 	// Record the values when we last output a server event - means we can update if things change.
 	if FlagSet(fp.debug, DebugTrackPaused) {
 		fp.logger.Debugf("paused: line %d running/max: %d/%d paused/max %d/%d window %.2f s",
@@ -2053,7 +2076,7 @@ func (fp *P4dFileParser) updateComputeTime(pid int64, computeLapse string) {
 
 func (fp *P4dFileParser) updateCompletionTime(pid int64, lineNo int64, endTime string, completedLapse string) {
 	if cmd, ok := fp.cmds[pid]; ok {
-		cmd.setEndTime(endTime)
+		cmd.setEndTime(endTime, fp.location)
 		f, _ := strconv.ParseFloat(string(completedLapse), 32)
 		cmd.CompletedLapse = float32(f)
 		cmd.completed = true
@@ -2064,7 +2087,7 @@ func (fp *P4dFileParser) updateCompletionTime(pid int64, lineNo int64, endTime s
 		cmd = newCommand()
 		cmd.Pid = pid
 		cmd.LineNo = lineNo
-		cmd.setEndTime(endTime)
+		cmd.setEndTime(endTime, fp.location)
 		f, _ := strconv.ParseFloat(string(completedLapse), 32)
 		cmd.CompletedLapse = float32(f)
 		cmd.completed = true
@@ -2146,7 +2169,7 @@ func (fp *P4dFileParser) processInfoBlock(block *Block) {
 			matched = true
 			cmd = newCommand()
 			cmd.LineNo = block.lineNo
-			cmd.setStartTime(m[1])
+			cmd.setStartTime(m[1], fp.location)
 			cmd.Pid = toInt64(m[2])
 			cmd.User = m[3]
 			cmd.Workspace = m[4]
